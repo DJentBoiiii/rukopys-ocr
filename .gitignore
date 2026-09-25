@@ -7,3 +7,7 @@ checkpoints/*.pth
 data_cache/
 *.log
 .DS_Store
+instruction.md
+.hf_cache/
+
+README.md
