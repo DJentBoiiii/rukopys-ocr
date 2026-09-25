@@ -13,6 +13,10 @@ VOCAB_PATH = CHECKPOINT_DIR / "vocab.json"
 PRETRAIN_CHECKPOINT = CHECKPOINT_DIR / "pretrain.pt"
 FINETUNE_CHECKPOINT = CHECKPOINT_DIR / "finetune.pt"
 FINETUNE_CHECKPOINT_V2 = CHECKPOINT_DIR / "finetune_v2.pt"
+# GPU finetune run (see experiments/gpu_benchmark.md): separate path so this
+# never overwrites the confirmed CPU baseline (finetune.pt) or the stale,
+# unconfirmed CPU v2 attempt (finetune_v2.pt).
+FINETUNE_CHECKPOINT_GPU = CHECKPOINT_DIR / "finetune_gpu.pt"
 
 # CPU-only, one overnight run (~5h) budget: kept conservative so the full
 # pipeline is guaranteed to finish rather than risk an overnight timeout.
@@ -21,8 +25,11 @@ PRETRAIN_EPOCHS = 2
 PRETRAIN_BATCH_SIZE = 16
 PRETRAIN_LR = 1e-3
 
-FINETUNE_MAX_EXAMPLES = 18000
-FINETUNE_EPOCHS = 20
+# GPU finetune budget (RTX 3050 Mobile), derived from measured throughput in
+# experiments/gpu_benchmark.md: full real-data pool (21227 non-val handwritten
+# train regions), epoch count sized to the remaining time budget with margin.
+FINETUNE_MAX_EXAMPLES = 21227
+FINETUNE_EPOCHS = 150
 FINETUNE_BATCH_SIZE = 16
 FINETUNE_LR = 3e-4
 
