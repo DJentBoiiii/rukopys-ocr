@@ -17,6 +17,10 @@ FINETUNE_CHECKPOINT_V2 = CHECKPOINT_DIR / "finetune_v2.pt"
 # never overwrites the confirmed CPU baseline (finetune.pt) or the stale,
 # unconfirmed CPU v2 attempt (finetune_v2.pt).
 FINETUNE_CHECKPOINT_GPU = CHECKPOINT_DIR / "finetune_gpu.pt"
+# Dynamic-width-padding rerun, warm-started from FINETUNE_CHECKPOINT_GPU:
+# separate path so it never overwrites any of the previous checkpoints
+# (finetune.pt, finetune_v2.pt, finetune_gpu.pt) still kept as fallbacks.
+FINETUNE_CHECKPOINT_GPU_V2 = CHECKPOINT_DIR / "finetune_gpu_v2.pt"
 
 # CPU-only, one overnight run (~5h) budget: kept conservative so the full
 # pipeline is guaranteed to finish rather than risk an overnight timeout.

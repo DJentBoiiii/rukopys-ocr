@@ -199,7 +199,12 @@ def run_finetune() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if config.FINETUNE_CHECKPOINT.exists():
+    if config.FINETUNE_CHECKPOINT_GPU.exists():
+        state = torch.load(config.FINETUNE_CHECKPOINT_GPU, map_location=device)
+        model.load_state_dict(state["model_state"])
+        model = model.to(device)
+        log("loaded finetune_gpu checkpoint weights (warm-start from previous GPU finetune run, epoch ~27)")
+    elif config.FINETUNE_CHECKPOINT.exists():
         state = torch.load(config.FINETUNE_CHECKPOINT, map_location=device)
         model.load_state_dict(state["model_state"])
         model = model.to(device)
@@ -214,7 +219,7 @@ def run_finetune() -> None:
 
     train_loop(
         model, dataset, config.FINETUNE_EPOCHS, config.FINETUNE_BATCH_SIZE,
-        config.FINETUNE_LR, config.FINETUNE_CHECKPOINT_GPU, "finetune",
+        config.FINETUNE_LR, config.FINETUNE_CHECKPOINT_GPU_V2, "finetune",
         tokenizer=tokenizer, val_samples=val_samples,
     )
 
