@@ -74,3 +74,13 @@ class CRNNModel(nn.Module):
 
         log_probs = torch.log_softmax(logits, dim=-1)
         return log_probs.permute(1, 0, 2)  # (T=W, B, vocab_size), required by CTCLoss
+
+
+def compute_output_seq_length(input_width: int) -> int:
+    """Compute the model's output sequence length (time steps) for a given
+    input image width, matching the width downsampling of `CRNNModel.cnn`.
+    """
+    w = input_width // 2  # first MaxPool2d(2, 2)
+    w = w // 2  # second MaxPool2d(2, 2)
+    w = w - 1  # final kernel_size=2, no padding conv
+    return max(w, 0)
