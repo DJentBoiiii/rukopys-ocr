@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import multiprocessing
 import time
+from pathlib import Path
 
 import jiwer
 import torch
@@ -79,7 +80,9 @@ def train_loop(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
+    loader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch, num_workers=6,
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     ctc_loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)
 
@@ -87,6 +90,10 @@ def train_loop(
     # (real handwriting), not for pretrain on synthetic data
     track_val = stage_name == "finetune" and val_samples and tokenizer is not None
     decoder = CTCDecoder(tokenizer) if track_val else None
+
+    checkpoint_path = Path(checkpoint_path)
+    best_checkpoint_path = checkpoint_path.with_name(checkpoint_path.stem + "_best" + checkpoint_path.suffix)
+    best_val_cer = float("inf")
 
     step = 0
     start_time = time.time()
@@ -121,6 +128,11 @@ def train_loop(
                 f"[{stage_name}] epoch {epoch}/{epochs} avg_loss {avg_loss:.4f} "
                 f"val_wer {val_wer:.4f} val_cer {val_cer:.4f} (checkpoint saved)"
             )
+
+            if val_cer < best_val_cer:
+                best_val_cer = val_cer
+                save_checkpoint(model, best_checkpoint_path, epoch, step)
+                log(f"new best val_cer: {val_cer:.4f} (epoch {epoch})")
         else:
             log(f"[{stage_name}] epoch {epoch}/{epochs} avg_loss {avg_loss:.4f} elapsed {elapsed / 60:.1f}min")
 
