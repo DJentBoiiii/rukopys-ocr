@@ -73,6 +73,9 @@ def evaluate_on_subset(model, tokenizer, decoder, val_samples) -> tuple[float, f
     return jiwer.wer(refs, hyps), jiwer.cer(refs, hyps)
 
 
+PATIENCE = 12
+
+
 def train_loop(
     model, dataset, epochs, batch_size, lr, checkpoint_path, stage_name,
     tokenizer=None, val_samples=None,
@@ -94,6 +97,7 @@ def train_loop(
     checkpoint_path = Path(checkpoint_path)
     best_checkpoint_path = checkpoint_path.with_name(checkpoint_path.stem + "_best" + checkpoint_path.suffix)
     best_val_cer = float("inf")
+    epochs_without_improvement = 0
 
     step = 0
     start_time = time.time()
@@ -131,8 +135,17 @@ def train_loop(
 
             if val_cer < best_val_cer:
                 best_val_cer = val_cer
+                epochs_without_improvement = 0
                 save_checkpoint(model, best_checkpoint_path, epoch, step)
                 log(f"new best val_cer: {val_cer:.4f} (epoch {epoch})")
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement >= PATIENCE:
+                    log(
+                        f"[{stage_name}] early stopping: val_cer did not improve for "
+                        f"{PATIENCE} epochs (best {best_val_cer:.4f}), stopping at epoch {epoch}/{epochs}"
+                    )
+                    break
         else:
             log(f"[{stage_name}] epoch {epoch}/{epochs} avg_loss {avg_loss:.4f} elapsed {elapsed / 60:.1f}min")
 
