@@ -1,0 +1,30 @@
+{
+  "n_examples": 6373,
+  "model_wer": 0.8773777991813148,
+  "model_cer": 0.5146250699912294,
+  "eval_time_seconds": 210.779803276062,
+  "tesseract_wer": null,
+  "tesseract_cer": null,
+  "by_source": {
+    "dictation": {
+      "n": 3398,
+      "model_wer": 0.8412149582424597,
+      "model_cer": 0.4715756249775833
+    },
+    "archive": {
+      "n": 510,
+      "model_wer": 0.9139344262295082,
+      "model_cer": 0.5474321984997115
+    },
+    "university": {
+      "n": 1217,
+      "model_wer": 0.9539473684210527,
+      "model_cer": 0.6211714732841493
+    },
+    "school": {
+      "n": 1248,
+      "model_wer": 0.8899979205656061,
+      "model_cer": 0.49573103765897897
+    }
+  }
+}
