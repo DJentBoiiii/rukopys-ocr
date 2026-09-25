@@ -76,6 +76,9 @@ def train_loop(
     model, dataset, epochs, batch_size, lr, checkpoint_path, stage_name,
     tokenizer=None, val_samples=None,
 ) -> int:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     ctc_loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)
@@ -91,6 +94,9 @@ def train_loop(
         epoch_loss = 0.0
         n_batches = 0
         for images, targets, input_lengths, target_lengths in loader:
+            images = images.to(device)
+            targets = targets.to(device)
+
             optimizer.zero_grad()
             log_probs = model(images)
             loss = ctc_loss(log_probs, targets, input_lengths, target_lengths)
@@ -166,13 +172,17 @@ def run_finetune() -> None:
     dataset = LineImageDataset(samples, tokenizer)
     model = make_model(tokenizer.vocab_size)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if config.FINETUNE_CHECKPOINT.exists():
-        state = torch.load(config.FINETUNE_CHECKPOINT, map_location="cpu")
+        state = torch.load(config.FINETUNE_CHECKPOINT, map_location=device)
         model.load_state_dict(state["model_state"])
+        model = model.to(device)
         log("loaded finetune checkpoint weights (warm-start from previous finetune run)")
     elif config.PRETRAIN_CHECKPOINT.exists():
-        state = torch.load(config.PRETRAIN_CHECKPOINT, map_location="cpu")
+        state = torch.load(config.PRETRAIN_CHECKPOINT, map_location=device)
         model.load_state_dict(state["model_state"])
+        model = model.to(device)
         log("loaded pretrain checkpoint weights")
     else:
         log("no checkpoint found, finetuning from scratch")

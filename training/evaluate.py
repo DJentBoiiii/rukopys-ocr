@@ -53,6 +53,8 @@ def load_model_for_eval() -> tuple[CRNNModel, CharTokenizer, CTCDecoder]:
 def predict(model: CRNNModel, decoder: CTCDecoder, image) -> str:
     resized = resize_to_fixed_height(image)
     tensor = normalize_image(resized).unsqueeze(0)  # (1, 1, H, W)
+    device = next(model.parameters()).device
+    tensor = tensor.to(device)
     with torch.no_grad():
         log_probs = model(tensor)  # (T, 1, V)
     return decoder.decode(log_probs[:, 0, :]).text
