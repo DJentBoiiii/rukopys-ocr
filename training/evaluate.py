@@ -13,10 +13,17 @@ from PIL import Image
 
 from model.crnn import CRNNModel
 from model.ctc_decoder import CTCDecoder
+from model.reconstruction import ReconstructionModule, build_word_frequencies
 from model.tokenizer import CharTokenizer
 from training import config
 from training.datasets_common import normalize_image, resize_to_fixed_height
-from training.rukopys_loader import download_rukopys, load_rukopys_test_set
+from training.rukopys_loader import (
+    _load_split_regions,
+    _region_id,
+    build_or_load_val_ids,
+    download_rukopys,
+    load_rukopys_test_set,
+)
 
 try:
     import pytesseract
@@ -61,14 +68,27 @@ def predict_tesseract(image) -> str | None:
         return None
 
 
+def build_reconstruction_module() -> ReconstructionModule:
+    """Build the word-frequency dictionary from RUKOPYS train transcriptions,
+    excluding the fixed validation subset (see `training/rukopys_loader.py`)
+    so it stays disjoint from any WER/CER-tracked data.
+    """
+    val_ids = set(build_or_load_val_ids(config.DATA_CACHE_DIR))
+    regions = _load_split_regions(config.DATA_CACHE_DIR, "train")
+    texts = [r["text"] for r in regions if _region_id(r) not in val_ids]
+    freqs = build_word_frequencies(texts)
+    return ReconstructionModule(freqs)
+
+
 def evaluate() -> None:
     download_rukopys(str(config.DATA_CACHE_DIR))
     test_samples = load_rukopys_test_set(config.DATA_CACHE_DIR)
     print(f"loaded {len(test_samples)} test regions")
 
     model, tokenizer, decoder = load_model_for_eval()
+    reconstructor = build_reconstruction_module()
 
-    refs, hyps_model, hyps_tesseract = [], [], []
+    refs, hyps_model, hyps_recon, hyps_tesseract = [], [], [], []
     per_source = {}
 
     t0 = time.time()
@@ -76,12 +96,17 @@ def evaluate() -> None:
     for i, sample in enumerate(test_samples):
         ref = sample["text"]
         hyp_model = predict(model, decoder, sample["image"])
+        hyp_recon = reconstructor.reconstruct(hyp_model)
 
         refs.append(ref)
         hyps_model.append(hyp_model)
-        per_source.setdefault(sample["source"], {"refs": [], "model": [], "tesseract": []})
+        hyps_recon.append(hyp_recon)
+        per_source.setdefault(
+            sample["source"], {"refs": [], "model": [], "recon": [], "tesseract": []},
+        )
         per_source[sample["source"]]["refs"].append(ref)
         per_source[sample["source"]]["model"].append(hyp_model)
+        per_source[sample["source"]]["recon"].append(hyp_recon)
 
         if tesseract_available:
             hyp_tess = predict_tesseract(sample["image"])
@@ -101,6 +126,8 @@ def evaluate() -> None:
         "n_examples": len(test_samples),
         "model_wer": jiwer.wer(refs, hyps_model),
         "model_cer": jiwer.cer(refs, hyps_model),
+        "reconstruction_wer": jiwer.wer(refs, hyps_recon),
+        "reconstruction_cer": jiwer.cer(refs, hyps_recon),
         "eval_time_seconds": elapsed,
     }
 
@@ -117,6 +144,8 @@ def evaluate() -> None:
             "n": len(data["refs"]),
             "model_wer": jiwer.wer(data["refs"], data["model"]),
             "model_cer": jiwer.cer(data["refs"], data["model"]),
+            "reconstruction_wer": jiwer.wer(data["refs"], data["recon"]),
+            "reconstruction_cer": jiwer.cer(data["refs"], data["recon"]),
         }
         if data["tesseract"] and len(data["tesseract"]) == len(data["refs"]):
             entry["tesseract_wer"] = jiwer.wer(data["refs"], data["tesseract"])
