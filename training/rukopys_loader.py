@@ -19,6 +19,11 @@ from PIL import Image
 from preprocessing.deskew import deskew
 from training.datasets_common import to_grayscale_array
 
+# archive scans can exceed Pillow's default decompression-bomb pixel limit;
+# these come from our own trusted dataset download, so raise it instead of
+# disabling the check entirely.
+Image.MAX_IMAGE_PIXELS = 300_000_000
+
 REPO_ID = "UkrainianCatholicUniversity/rukopys"
 DEFAULT_CACHE_DIR = "data_cache/rukopys"
 
