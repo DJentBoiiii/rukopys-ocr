@@ -17,7 +17,7 @@ from huggingface_hub import snapshot_download
 from PIL import Image
 
 from preprocessing.deskew import deskew
-from training.datasets_common import to_grayscale_array
+from training.datasets_common import resize_to_fixed_height, to_grayscale_array
 
 # archive scans can exceed Pillow's default decompression-bomb pixel limit;
 # these come from our own trusted dataset download, so raise it instead of
@@ -143,6 +143,10 @@ def load_rukopys_val_set(root: Path, apply_deskew: bool = True) -> List[dict]:
                 image = deskew(image)
             except Exception:
                 pass
+        # resize to fixed height immediately -- holding full-resolution scans
+        # for all regions simultaneously is what was OOM-killing the process
+        # before it even finished loading (no swap on this machine).
+        image = resize_to_fixed_height(image)
         samples.append({"image": image, "text": region["text"], "source": region["source"]})
     return samples
 
@@ -186,6 +190,9 @@ def load_rukopys_train_subset(
                 image = deskew(image)
             except Exception:
                 pass
+        # resize to fixed height immediately -- see comment in
+        # `load_rukopys_val_set` for why this can't wait until later.
+        image = resize_to_fixed_height(image)
         samples.append((image, region["text"]))
     return samples
 
@@ -205,5 +212,6 @@ def load_rukopys_test_set(root: Path, apply_deskew: bool = True) -> List[dict]:
                 image = deskew(image)
             except Exception:
                 pass
+        image = resize_to_fixed_height(image)
         samples.append({"image": image, "text": region["text"], "source": region["source"]})
     return samples

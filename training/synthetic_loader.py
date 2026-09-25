@@ -12,7 +12,7 @@ from typing import List, Tuple
 import numpy as np
 from datasets import load_dataset
 
-from training.datasets_common import to_grayscale_array
+from training.datasets_common import resize_to_fixed_height, to_grayscale_array
 
 DATASET_NAME = "pumb-ai/synthetic-cyrillic-large"
 
@@ -30,6 +30,7 @@ def load_synthetic_subset(n_examples: int, seed: int = 42) -> List[Tuple[np.ndar
         if not text:
             continue
         image = to_grayscale_array(example["png"])
+        image = resize_to_fixed_height(image)
         samples.append((image, text))
         if len(samples) >= n_examples:
             break
