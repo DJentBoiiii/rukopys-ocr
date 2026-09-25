@@ -5,13 +5,16 @@ import argparse
 import multiprocessing
 import time
 
+import jiwer
 import torch
 from torch.utils.data import DataLoader
 
 from model.crnn import CRNNModel
+from model.ctc_decoder import CTCDecoder
 from model.tokenizer import CharTokenizer
 from training import config
 from training.datasets_common import LineImageDataset, collate_batch
+from training.evaluate import predict as ocr_predict
 from training.rukopys_loader import (
     _load_split_regions,
     build_or_load_val_ids,
@@ -57,10 +60,30 @@ def save_checkpoint(model: CRNNModel, path, epoch: int, step: int) -> None:
     torch.save({"model_state": model.state_dict(), "epoch": epoch, "step": step}, path)
 
 
-def train_loop(model, dataset, epochs, batch_size, lr, checkpoint_path, stage_name) -> int:
+def evaluate_on_subset(model, tokenizer, decoder, val_samples) -> tuple[float, float]:
+    """Compute WER/CER of `model` on a small preloaded validation subset
+    (list of {"image", "text"} dicts), reusing the inference logic from
+    `training/evaluate.py` instead of duplicating it.
+    """
+    model.eval()
+    refs = [sample["text"] for sample in val_samples]
+    hyps = [ocr_predict(model, decoder, sample["image"]) for sample in val_samples]
+    model.train()
+    return jiwer.wer(refs, hyps), jiwer.cer(refs, hyps)
+
+
+def train_loop(
+    model, dataset, epochs, batch_size, lr, checkpoint_path, stage_name,
+    tokenizer=None, val_samples=None,
+) -> int:
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     ctc_loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)
+
+    # validation WER/CER tracking is only meaningful for the finetune stage
+    # (real handwriting), not for pretrain on synthetic data
+    track_val = stage_name == "finetune" and val_samples and tokenizer is not None
+    decoder = CTCDecoder(tokenizer) if track_val else None
 
     step = 0
     start_time = time.time()
@@ -84,8 +107,16 @@ def train_loop(model, dataset, epochs, batch_size, lr, checkpoint_path, stage_na
 
         avg_loss = epoch_loss / max(n_batches, 1)
         elapsed = time.time() - start_time
-        log(f"[{stage_name}] epoch {epoch}/{epochs} avg_loss {avg_loss:.4f} elapsed {elapsed / 60:.1f}min")
         save_checkpoint(model, checkpoint_path, epoch, step)
+
+        if track_val:
+            val_wer, val_cer = evaluate_on_subset(model, tokenizer, decoder, val_samples)
+            log(
+                f"[{stage_name}] epoch {epoch}/{epochs} avg_loss {avg_loss:.4f} "
+                f"val_wer {val_wer:.4f} val_cer {val_cer:.4f} (checkpoint saved)"
+            )
+        else:
+            log(f"[{stage_name}] epoch {epoch}/{epochs} avg_loss {avg_loss:.4f} elapsed {elapsed / 60:.1f}min")
 
     return step
 
@@ -129,6 +160,9 @@ def run_finetune() -> None:
     )
     log(f"loaded {len(samples)} rukopys train examples")
 
+    val_samples = load_rukopys_val_set(config.DATA_CACHE_DIR)
+    log(f"loaded {len(val_samples)} validation examples")
+
     dataset = LineImageDataset(samples, tokenizer)
     model = make_model(tokenizer.vocab_size)
 
@@ -146,6 +180,7 @@ def run_finetune() -> None:
     train_loop(
         model, dataset, config.FINETUNE_EPOCHS, config.FINETUNE_BATCH_SIZE,
         config.FINETUNE_LR, config.FINETUNE_CHECKPOINT, "finetune",
+        tokenizer=tokenizer, val_samples=val_samples,
     )
 
     elapsed = time.time() - t0
