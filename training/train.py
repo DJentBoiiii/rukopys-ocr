@@ -121,12 +121,16 @@ def run_finetune() -> None:
     dataset = LineImageDataset(samples, tokenizer)
     model = make_model(tokenizer.vocab_size)
 
-    if config.PRETRAIN_CHECKPOINT.exists():
+    if config.FINETUNE_CHECKPOINT.exists():
+        state = torch.load(config.FINETUNE_CHECKPOINT, map_location="cpu")
+        model.load_state_dict(state["model_state"])
+        log("loaded finetune checkpoint weights (warm-start from previous finetune run)")
+    elif config.PRETRAIN_CHECKPOINT.exists():
         state = torch.load(config.PRETRAIN_CHECKPOINT, map_location="cpu")
         model.load_state_dict(state["model_state"])
         log("loaded pretrain checkpoint weights")
     else:
-        log("no pretrain checkpoint found, finetuning from scratch")
+        log("no checkpoint found, finetuning from scratch")
 
     train_loop(
         model, dataset, config.FINETUNE_EPOCHS, config.FINETUNE_BATCH_SIZE,
