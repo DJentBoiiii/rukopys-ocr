@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 checkpoints/*.pt
 checkpoints/*.pth
+checkpoints/*.bak
 data_cache/
 *.log
 .DS_Store
