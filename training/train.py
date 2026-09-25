@@ -179,7 +179,7 @@ def run_finetune() -> None:
 
     train_loop(
         model, dataset, config.FINETUNE_EPOCHS, config.FINETUNE_BATCH_SIZE,
-        config.FINETUNE_LR, config.FINETUNE_CHECKPOINT, "finetune",
+        config.FINETUNE_LR, config.FINETUNE_CHECKPOINT_V2, "finetune",
         tokenizer=tokenizer, val_samples=val_samples,
     )
 

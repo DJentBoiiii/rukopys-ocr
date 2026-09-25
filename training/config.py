@@ -12,6 +12,7 @@ VOCAB_PATH = CHECKPOINT_DIR / "vocab.json"
 
 PRETRAIN_CHECKPOINT = CHECKPOINT_DIR / "pretrain.pt"
 FINETUNE_CHECKPOINT = CHECKPOINT_DIR / "finetune.pt"
+FINETUNE_CHECKPOINT_V2 = CHECKPOINT_DIR / "finetune_v2.pt"
 
 # CPU-only, one overnight run (~5h) budget: kept conservative so the full
 # pipeline is guaranteed to finish rather than risk an overnight timeout.
@@ -20,8 +21,8 @@ PRETRAIN_EPOCHS = 2
 PRETRAIN_BATCH_SIZE = 16
 PRETRAIN_LR = 1e-3
 
-FINETUNE_MAX_EXAMPLES = 6000
-FINETUNE_EPOCHS = 10
+FINETUNE_MAX_EXAMPLES = 18000
+FINETUNE_EPOCHS = 20
 FINETUNE_BATCH_SIZE = 16
 FINETUNE_LR = 3e-4
 
