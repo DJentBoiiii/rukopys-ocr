@@ -11,6 +11,7 @@ from typing import List, Tuple
 
 import numpy as np
 from datasets import load_dataset
+from tqdm import tqdm
 
 from training.datasets_common import resize_to_fixed_height, to_grayscale_array
 
@@ -25,14 +26,16 @@ def load_synthetic_subset(n_examples: int, seed: int = 42) -> List[Tuple[np.ndar
     ds = load_dataset(DATASET_NAME, split="train", streaming=True)
 
     samples: List[Tuple[np.ndarray, str]] = []
-    for example in ds:
-        text = example["txt"].strip()
-        if not text:
-            continue
-        image = to_grayscale_array(example["png"])
-        image = resize_to_fixed_height(image)
-        samples.append((image, text))
-        if len(samples) >= n_examples:
-            break
+    with tqdm(total=n_examples, desc="loading synthetic examples") as pbar:
+        for example in ds:
+            text = example["txt"].strip()
+            if not text:
+                continue
+            image = to_grayscale_array(example["png"])
+            image = resize_to_fixed_height(image)
+            samples.append((image, text))
+            pbar.update(1)
+            if len(samples) >= n_examples:
+                break
 
     return samples

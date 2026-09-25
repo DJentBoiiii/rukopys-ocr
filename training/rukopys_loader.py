@@ -15,6 +15,7 @@ from typing import List, Tuple
 import numpy as np
 from huggingface_hub import snapshot_download
 from PIL import Image
+from tqdm import tqdm
 
 from preprocessing.deskew import deskew
 from training.datasets_common import resize_to_fixed_height, to_grayscale_array
@@ -136,7 +137,7 @@ def load_rukopys_val_set(root: Path, apply_deskew: bool = True) -> List[dict]:
     val_regions = [r for r in regions if _region_id(r) in val_ids]
 
     samples = []
-    for region in val_regions:
+    for region in tqdm(val_regions, desc="loading val regions"):
         image = _crop_region(region["image_path"], region["bbox"])
         if apply_deskew and image.shape[0] > 8 and image.shape[1] > 8:
             try:
@@ -182,7 +183,7 @@ def load_rukopys_train_subset(
         del pool_weights[idx]
 
     samples = []
-    for i in chosen_idx:
+    for i in tqdm(chosen_idx, desc="loading train examples"):
         region = regions[i]
         image = _crop_region(region["image_path"], region["bbox"])
         if apply_deskew and image.shape[0] > 8 and image.shape[1] > 8:
@@ -205,7 +206,7 @@ def load_rukopys_test_set(root: Path, apply_deskew: bool = True) -> List[dict]:
     """
     regions = _load_split_regions(root, "test")
     samples = []
-    for region in regions:
+    for region in tqdm(regions, desc="loading test regions"):
         image = _crop_region(region["image_path"], region["bbox"])
         if apply_deskew and image.shape[0] > 8 and image.shape[1] > 8:
             try:
