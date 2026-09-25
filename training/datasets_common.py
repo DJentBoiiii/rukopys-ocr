@@ -60,11 +60,20 @@ class LineImageDataset(Dataset):
     """Dataset of (grayscale line image, transcription) pairs for CTC training.
 
     `samples` is a sequence of (image_array, text) where image_array is
-    already a 2D grayscale numpy array (preprocessing applied upstream).
+    already a 2D grayscale numpy array (crop+deskew preprocessing applied
+    upstream, at full/original resolution).
+
+    The height-32 resize is done here, eagerly, once, at construction time --
+    NOT lazily inside `__getitem__` on every access. Keeping only the small
+    resized arrays (instead of the much larger original crops) is important
+    for `DataLoader(num_workers>0)`: forked worker processes otherwise each
+    hold their own copy-on-write view of the full list of original-resolution
+    images, which can multiply peak memory by roughly the worker count and
+    trigger an OOM kill.
     """
 
     def __init__(self, samples: Sequence[Tuple[np.ndarray, str]], tokenizer: CharTokenizer):
-        self.samples = samples
+        self.samples = [(resize_to_fixed_height(image), text) for image, text in samples]
         self.tokenizer = tokenizer
 
     def __len__(self) -> int:
@@ -72,10 +81,9 @@ class LineImageDataset(Dataset):
 
     def __getitem__(self, idx: int):
         image, text = self.samples[idx]
-        resized = resize_to_fixed_height(image)
-        tensor = normalize_image(resized)  # (1, H, W) -- W varies per example
+        tensor = normalize_image(image)  # (1, H, W) -- W varies per example
         target = torch.tensor(self.tokenizer.encode(text), dtype=torch.long)
-        return tensor, target, resized.shape[1]
+        return tensor, target, image.shape[1]
 
 
 # Normalized value of a white pixel (255 / 255 -> 1.0, then (1.0 - 0.5) / 0.5 == 1.0),

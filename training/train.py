@@ -84,7 +84,7 @@ def train_loop(
     model = model.to(device)
 
     loader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch, num_workers=6,
+        dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch, num_workers=4,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     ctc_loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)
@@ -165,6 +165,7 @@ def run_pretrain() -> None:
     log(f"vocab size {tokenizer.vocab_size}")
 
     dataset = LineImageDataset(synthetic_samples, tokenizer)
+    del synthetic_samples  # dataset now holds its own (much smaller) resized copies
     model = make_model(tokenizer.vocab_size)
 
     train_loop(
@@ -195,6 +196,7 @@ def run_finetune() -> None:
     log(f"loaded {len(val_samples)} validation examples")
 
     dataset = LineImageDataset(samples, tokenizer)
+    del samples  # dataset now holds its own (much smaller) resized copies
     model = make_model(tokenizer.vocab_size)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
