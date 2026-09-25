@@ -26,6 +26,9 @@ Image.MAX_IMAGE_PIXELS = 300_000_000
 
 REPO_ID = "UkrainianCatholicUniversity/rukopys"
 DEFAULT_CACHE_DIR = "data_cache/rukopys"
+VAL_SPLIT_PATH = Path(__file__).resolve().parent / "val_split.json"
+VAL_SPLIT_SIZE = 300
+VAL_SPLIT_SEED = 42
 
 # archive documents (CDAVO, 1919-1935) are the target domain: oversample them
 SOURCE_WEIGHTS = {
@@ -80,16 +83,86 @@ def _crop_region(image_path: Path, bbox: List[int]) -> np.ndarray:
         return to_grayscale_array(crop)
 
 
+def _region_id(region: dict) -> str:
+    """Stable identifier for a region: file name + bbox (unique within a split)."""
+    bbox = ",".join(str(v) for v in region["bbox"])
+    return f"{Path(region['image_path']).name}|{bbox}"
+
+
+def build_or_load_val_ids(
+    root: Path,
+    n: int = VAL_SPLIT_SIZE,
+    seed: int = VAL_SPLIT_SEED,
+) -> List[str]:
+    """Build a fixed validation split (region ids) from RUKOPYS train, stratified
+    by `source` where possible, and persist it to `VAL_SPLIT_PATH` so the same
+    validation subset is reused across runs instead of being resampled.
+    """
+    if VAL_SPLIT_PATH.exists():
+        return json.loads(VAL_SPLIT_PATH.read_text(encoding="utf-8"))
+
+    regions = _load_split_regions(root, "train")
+    by_source: dict = {}
+    for region in regions:
+        by_source.setdefault(region["source"], []).append(region)
+
+    rng = random.Random(seed)
+    total = len(regions)
+    remaining = n
+    chosen: List[dict] = []
+    sources = sorted(by_source.keys())
+    for i, source in enumerate(sources):
+        pool = by_source[source]
+        if i == len(sources) - 1:
+            take = remaining
+        else:
+            take = min(round(n * len(pool) / total), remaining, len(pool))
+        sampled = rng.sample(pool, take) if take > 0 else []
+        chosen.extend(sampled)
+        remaining -= len(sampled)
+
+    ids = [_region_id(r) for r in chosen]
+    VAL_SPLIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    VAL_SPLIT_PATH.write_text(json.dumps(ids, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ids
+
+
+def load_rukopys_val_set(root: Path, apply_deskew: bool = True) -> List[dict]:
+    """Load the fixed validation subset of RUKOPYS train (never used for
+    training itself), pre-cropped and deskewed, for periodic val WER/CER checks.
+    """
+    val_ids = set(build_or_load_val_ids(root))
+    regions = _load_split_regions(root, "train")
+    val_regions = [r for r in regions if _region_id(r) in val_ids]
+
+    samples = []
+    for region in val_regions:
+        image = _crop_region(region["image_path"], region["bbox"])
+        if apply_deskew and image.shape[0] > 8 and image.shape[1] > 8:
+            try:
+                image = deskew(image)
+            except Exception:
+                pass
+        samples.append({"image": image, "text": region["text"], "source": region["source"]})
+    return samples
+
+
 def load_rukopys_train_subset(
     root: Path,
     max_examples: int,
     seed: int = 42,
     apply_deskew: bool = True,
+    exclude_ids: set | None = None,
 ) -> List[Tuple[np.ndarray, str]]:
     """Load a training subset from RUKOPYS train, sampled with a higher
     weight on `source: archive` examples (without fully excluding others).
+
+    `exclude_ids` (region ids, see `_region_id`) are removed from the pool
+    before sampling, e.g. to keep the fixed validation subset out of training.
     """
     regions = _load_split_regions(root, "train")
+    if exclude_ids:
+        regions = [r for r in regions if _region_id(r) not in exclude_ids]
     rng = random.Random(seed)
 
     weights = [SOURCE_WEIGHTS.get(r["source"], 1.0) for r in regions]

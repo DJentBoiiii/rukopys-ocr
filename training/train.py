@@ -12,7 +12,13 @@ from model.crnn import CRNNModel
 from model.tokenizer import CharTokenizer
 from training import config
 from training.datasets_common import LineImageDataset, collate_batch
-from training.rukopys_loader import _load_split_regions, download_rukopys, load_rukopys_train_subset
+from training.rukopys_loader import (
+    _load_split_regions,
+    build_or_load_val_ids,
+    download_rukopys,
+    load_rukopys_train_subset,
+    load_rukopys_val_set,
+)
 from training.synthetic_loader import load_synthetic_subset
 
 LOG_FILE = config.LOG_DIR / "train.log"
@@ -115,7 +121,12 @@ def run_finetune() -> None:
     download_rukopys(str(config.DATA_CACHE_DIR))
 
     tokenizer = CharTokenizer.load(config.VOCAB_PATH)
-    samples = load_rukopys_train_subset(config.DATA_CACHE_DIR, config.FINETUNE_MAX_EXAMPLES)
+    val_ids = set(build_or_load_val_ids(config.DATA_CACHE_DIR))
+    log(f"validation split: {len(val_ids)} regions (excluded from training)")
+
+    samples = load_rukopys_train_subset(
+        config.DATA_CACHE_DIR, config.FINETUNE_MAX_EXAMPLES, exclude_ids=val_ids,
+    )
     log(f"loaded {len(samples)} rukopys train examples")
 
     dataset = LineImageDataset(samples, tokenizer)
