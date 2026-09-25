@@ -12,7 +12,10 @@ from model.crnn import compute_output_seq_length
 from model.tokenizer import CharTokenizer
 
 IMG_HEIGHT = 32
-MAX_WIDTH = 384
+# Global safety cap against pathological outliers (measured p99=864 on the
+# full train split); actual per-batch padding width is computed dynamically
+# in `collate_batch` from the batch's real line widths, not this constant.
+HARD_CAP = 800
 
 
 def to_grayscale_array(image) -> np.ndarray:
@@ -26,23 +29,24 @@ def to_grayscale_array(image) -> np.ndarray:
     return arr.astype(np.uint8)
 
 
-def resize_to_fixed_height(image: np.ndarray, target_height: int = IMG_HEIGHT, max_width: int = MAX_WIDTH) -> np.ndarray:
-    """Resize a grayscale line image to a fixed height, preserving aspect ratio,
-    then pad (white) or crop the width to `max_width`.
+def resize_to_fixed_height(image: np.ndarray, target_height: int = IMG_HEIGHT, hard_cap: int = HARD_CAP) -> np.ndarray:
+    """Resize a grayscale line image to a fixed height, preserving aspect ratio.
+
+    Width is NOT padded or cropped to a fixed value here -- only capped at
+    `hard_cap` as a safeguard against pathological outliers. Per-batch
+    padding to a common width happens in `collate_batch`, so different
+    batches can use different widths instead of a single global constant.
     """
     h, w = image.shape
     if h == 0 or w == 0:
-        return np.full((target_height, max_width), 255, dtype=np.uint8)
+        return np.full((target_height, 1), 255, dtype=np.uint8)
 
     new_w = max(1, round(w * target_height / h))
     resized = cv2.resize(image, (new_w, target_height), interpolation=cv2.INTER_AREA)
 
-    if new_w >= max_width:
-        return resized[:, :max_width]
-
-    padded = np.full((target_height, max_width), 255, dtype=np.uint8)
-    padded[:, :new_w] = resized
-    return padded
+    if new_w > hard_cap:
+        resized = resized[:, :hard_cap]
+    return resized
 
 
 def normalize_image(image: np.ndarray) -> torch.Tensor:
@@ -69,20 +73,39 @@ class LineImageDataset(Dataset):
     def __getitem__(self, idx: int):
         image, text = self.samples[idx]
         resized = resize_to_fixed_height(image)
-        original_width = min(image.shape[1] * IMG_HEIGHT // max(image.shape[0], 1), MAX_WIDTH)
-        tensor = normalize_image(resized)
+        tensor = normalize_image(resized)  # (1, H, W) -- W varies per example
         target = torch.tensor(self.tokenizer.encode(text), dtype=torch.long)
-        return tensor, target, original_width
+        return tensor, target, resized.shape[1]
+
+
+# Normalized value of a white pixel (255 / 255 -> 1.0, then (1.0 - 0.5) / 0.5 == 1.0),
+# used to pad images to a common per-batch width without reintroducing a fixed constant.
+_PAD_VALUE = 1.0
 
 
 def collate_batch(batch: List[Tuple[torch.Tensor, torch.Tensor, int]]):
-    images = torch.stack([b[0] for b in batch])  # (B, 1, H, MAX_WIDTH)
+    widths = [b[2] for b in batch]
+    batch_max_width = min(max(widths), HARD_CAP)
+
+    padded_images = []
+    for tensor, _target, width in batch:
+        if width < batch_max_width:
+            pad = torch.full(
+                (tensor.shape[0], tensor.shape[1], batch_max_width - width),
+                _PAD_VALUE, dtype=tensor.dtype,
+            )
+            tensor = torch.cat([tensor, pad], dim=-1)
+        elif width > batch_max_width:
+            tensor = tensor[:, :, :batch_max_width]
+        padded_images.append(tensor)
+    images = torch.stack(padded_images)  # (B, 1, H, batch_max_width)
+
     targets = torch.cat([b[1] for b in batch])
     target_lengths = torch.tensor([len(b[1]) for b in batch], dtype=torch.long)
 
-    max_t = compute_output_seq_length(MAX_WIDTH)
+    max_t = compute_output_seq_length(batch_max_width)
     input_lengths = torch.tensor(
-        [max(1, min(compute_output_seq_length(b[2]), max_t)) for b in batch],
+        [max(1, min(compute_output_seq_length(w), max_t)) for w in widths],
         dtype=torch.long,
     )
     return images, targets, input_lengths, target_lengths
